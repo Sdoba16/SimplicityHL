@@ -14,6 +14,8 @@ fn cli_dependency_can_use_crate_root() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_simc"))
         .arg(main)
+        .arg("-Z")
+        .arg("imports")
         .arg("--dep")
         .arg(dep_arg)
         .output()

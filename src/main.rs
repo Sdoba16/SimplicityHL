@@ -3,6 +3,7 @@ use base64::engine::general_purpose::STANDARD;
 use clap::{Arg, ArgAction, Command};
 
 use simplicityhl::ast::ElementsJetHinter;
+use simplicityhl::UnstableFeatures;
 use simplicityhl::{
     resolution::DependencyMapBuilder, source::CanonPath, source::CanonSourceFile, AbiMeta,
     CompiledProgram,
@@ -95,6 +96,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .action(ArgAction::SetTrue)
                     .help("Additional ABI .simf contract types"),
             )
+            .arg(
+                Arg::new("unstable_features")
+                    .long("unstable-feature")
+                    .short('Z')
+                    .value_name("FEATURE")
+                    .action(ArgAction::Append)
+                    .help(simplicityhl::UnstableFeature::help_message()),
+            )
     };
 
     let matches = command.get_matches();
@@ -105,6 +114,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let include_debug_symbols = matches.get_flag("debug");
     let output_json = matches.get_flag("json");
     let abi_param = matches.get_flag("abi");
+
+    // Parse unstable features
+    let unstable_features = if let Some(features) = matches.get_many::<String>("unstable_features")
+    {
+        UnstableFeatures::from_names(features.map(|s| s.as_str())).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        })
+    } else {
+        UnstableFeatures::none()
+    };
 
     #[cfg(feature = "serde")]
     let args_opt: simplicityhl::Arguments = match matches.get_one::<String>("args_file") {
@@ -170,9 +190,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let source = CanonSourceFile::new(main_path.clone(), std::sync::Arc::from(main_text));
-    let compiled = match CompiledProgram::new_with_dep(
+    let compiled = match CompiledProgram::with_unstable_and_dep(
         source,
         &dependencies,
+        &unstable_features,
         args_opt,
         include_debug_symbols,
         Box::new(ElementsJetHinter::new()),

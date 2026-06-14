@@ -10,9 +10,10 @@ use crate::error::Error;
 use crate::named::{CoreExt, PairBuilder, SelectorBuilder};
 use crate::str::Identifier;
 use crate::types::{ResolvedType, TypeInner};
+use crate::unstable::RequireFeature;
 
 /// Pattern for binding values to variables.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, RequireFeature)]
 pub enum Pattern {
     /// Match any value and bind it to variable name.
     Identifier(Identifier),

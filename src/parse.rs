@@ -30,9 +30,10 @@ use crate::str::{
     SymbolName, WitnessName,
 };
 use crate::types::{AliasedType, BuiltinAlias, TypeConstructible, UIntType};
+use crate::unstable::RequireFeature;
 
 /// A program is a sequence of items.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct Program {
     items: Arc<[Item]>,
     span: Span,
@@ -56,7 +57,7 @@ impl Program {
 impl_eq_hash!(Program; items);
 
 /// An item is a component of a program.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 pub enum Item {
     /// A type alias.
     TypeAlias(TypeAlias),
@@ -74,7 +75,7 @@ pub enum Item {
     Ignored,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, RequireFeature)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum Visibility {
     Public,
@@ -92,7 +93,8 @@ pub enum Visibility {
 /// ```text
 /// pub use std::collections::{HashMap, HashSet};
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
+#[require_feature(requires(Imports))]
 pub struct UseDecl {
     file_id: usize,
 
@@ -195,7 +197,7 @@ impl<'a> arbitrary::Arbitrary<'a> for UseDecl {
 pub type AliasedSymbolName = (SymbolName, Option<SymbolName>);
 
 /// Specified the items being brought into scope at the end of a `use` declaration
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, RequireFeature)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum UseItems {
     /// A single item import.
@@ -215,7 +217,7 @@ pub enum UseItems {
     List(Vec<AliasedSymbolName>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct Function {
     file_id: usize, // The field required for the driver
     visibility: Visibility,
@@ -270,7 +272,7 @@ impl Function {
 impl_eq_hash!(Function; visibility, name, params, ret, body);
 
 /// Parameter of a function.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FunctionParam {
     identifier: Identifier,
@@ -290,7 +292,7 @@ impl FunctionParam {
 }
 
 /// A statement is a component of a block expression.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 pub enum Statement {
     /// A declaration of variables inside a pattern.
     Assignment(Assignment),
@@ -299,7 +301,7 @@ pub enum Statement {
 }
 
 /// The output of an expression is assigned to a pattern.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct Assignment {
     pattern: Pattern,
     ty: AliasedType,
@@ -332,7 +334,7 @@ impl Assignment {
 impl_eq_hash!(Assignment; pattern, ty, expression);
 
 /// Call expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct Call {
     name: CallName,
     args: Arc<[Expression]>,
@@ -359,7 +361,7 @@ impl Call {
 impl_eq_hash!(Call; name, args);
 
 /// Name of a call.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum CallName {
     /// Name of a jet.
@@ -391,7 +393,7 @@ pub enum CallName {
 }
 
 /// A type alias.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TypeAlias {
     file_id: usize, // The field required for the driver
@@ -436,7 +438,7 @@ impl TypeAlias {
 impl_eq_hash!(TypeAlias; name, ty);
 
 /// An expression is something that returns a value.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct Expression {
     inner: ExpressionInner,
     span: Span,
@@ -479,7 +481,7 @@ impl Expression {
 impl_eq_hash!(Expression; inner);
 
 /// The kind of expression.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 pub enum ExpressionInner {
     /// A single expression directly returns a value.
     Single(SingleExpression),
@@ -490,7 +492,7 @@ pub enum ExpressionInner {
 }
 
 /// A single expression directly returns a value.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct SingleExpression {
     inner: SingleExpressionInner,
     span: Span,
@@ -511,7 +513,7 @@ impl SingleExpression {
 impl_eq_hash!(SingleExpression; inner);
 
 /// The kind of single expression.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 pub enum SingleExpressionInner {
     /// Either wrapper expression
     Either(Either<Arc<Expression>, Arc<Expression>>),
@@ -548,7 +550,7 @@ pub enum SingleExpressionInner {
 }
 
 /// Match expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, RequireFeature)]
 pub struct Match {
     scrutinee: Arc<Expression>,
     left: MatchArm,
@@ -593,7 +595,7 @@ impl Match {
 impl_eq_hash!(Match; scrutinee, left, right);
 
 /// Arm of a match expression.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 pub struct MatchArm {
     pattern: MatchPattern,
     expression: Arc<Expression>,
@@ -612,7 +614,7 @@ impl MatchArm {
 }
 
 /// Pattern of a match arm.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum MatchPattern {
     /// Bind inner value of left value to a pattern.
@@ -651,7 +653,8 @@ impl MatchPattern {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, RequireFeature)]
+#[require_feature(requires(Imports))]
 pub struct Module {
     file_id: usize,
     visibility: Visibility,

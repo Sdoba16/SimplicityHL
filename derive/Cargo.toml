@@ -1,0 +1,18 @@
+[package]
+name = "simplicityhl-derive"
+version = "0.1.0"
+authors = ["sanket1729 <sanket1729@gmail.com>"]
+license = "CC0-1.0"
+homepage = "https://github.com/BlockstreamResearch/SimplicityHL"
+repository = "https://github.com/BlockstreamResearch/SimplicityHL"
+description = "Derive macros internal to the simplicityhl crate."
+edition = "2021"
+rust-version = "1.79.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = "2"

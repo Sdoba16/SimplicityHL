@@ -651,6 +651,16 @@ dependencies = [
  "serde",
  "serde_json",
  "simplicity-lang",
+ "simplicityhl-derive",
+]
+
+[[package]]
+name = "simplicityhl-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.31",
 ]
 
 [[package]]

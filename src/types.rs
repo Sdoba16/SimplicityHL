@@ -551,6 +551,47 @@ pub enum BuiltinAlias {
     TokenAmount1,
 }
 
+impl crate::unstable::RequireFeature for BuiltinAlias {
+    /// Report feature-gated builtin types.
+    ///
+    /// No builtin is gated today, so every arm is a no-op. The point is the
+    /// exhaustive match: it is written by hand (not derived, not a blanket
+    /// no-op) precisely so that adding a builtin behind a feature gate is a
+    /// compile error here until its gating is decided. A derived impl would
+    /// auto-generate an empty arm for the new variant, and a no-op impl would
+    /// ignore it — both let the gated builtin slip through silently. This is
+    /// reached from `AliasedType`, which destructures `Builtin(_)` rather than
+    /// discarding it for the same reason.
+    fn feature_requirements(&self, _out: &mut Vec<crate::unstable::FeatureRequirement>) {
+        match self {
+            BuiltinAlias::Ctx8
+            | BuiltinAlias::Pubkey
+            | BuiltinAlias::Message
+            | BuiltinAlias::Message64
+            | BuiltinAlias::Signature
+            | BuiltinAlias::Scalar
+            | BuiltinAlias::Fe
+            | BuiltinAlias::Ge
+            | BuiltinAlias::Gej
+            | BuiltinAlias::Point
+            | BuiltinAlias::Height
+            | BuiltinAlias::Time
+            | BuiltinAlias::Distance
+            | BuiltinAlias::Duration
+            | BuiltinAlias::Lock
+            | BuiltinAlias::Outpoint
+            | BuiltinAlias::Confidential1
+            | BuiltinAlias::ExplicitAsset
+            | BuiltinAlias::Asset1
+            | BuiltinAlias::ExplicitAmount
+            | BuiltinAlias::Amount1
+            | BuiltinAlias::ExplicitNonce
+            | BuiltinAlias::Nonce
+            | BuiltinAlias::TokenAmount1 => {}
+        }
+    }
+}
+
 impl AliasedType {
     /// Access a user-defined alias.
     pub const fn as_alias(&self) -> Option<&AliasName> {
@@ -630,6 +671,38 @@ impl AliasedType {
     /// Resolve all aliases in the type based on the builtin type aliases only.
     pub fn resolve_builtin(&self) -> Result<ResolvedType, AliasName> {
         self.resolve(|name: &AliasName| Err(name.clone()))
+    }
+}
+
+impl crate::unstable::RequireFeature for AliasedType {
+    /// Report feature-gated syntax contained in a type.
+    ///
+    /// No type syntax is gated today, so this never pushes a requirement. The
+    /// value of the impl is its exhaustiveness: types are reachable from the
+    /// [`RequireFeature`](crate::unstable::RequireFeature) traversal, so if the
+    /// type grammar ever gains feature-gated syntax (e.g. `crate::`-qualified or
+    /// imported aliases), the new [`AliasedInner`], [`TypeInner`], or
+    /// [`BuiltinAlias`] variant is a compile error until its gating is decided,
+    /// rather than silently bypassing the check.
+    fn feature_requirements(&self, out: &mut Vec<crate::unstable::FeatureRequirement>) {
+        match &self.0 {
+            // A bare alias is a single name with no structure to gate. Builtins
+            // are destructured (not discarded) so a future gated builtin forces
+            // a decision in `BuiltinAlias::feature_requirements`.
+            AliasedInner::Alias(_) => {}
+            AliasedInner::Builtin(builtin) => builtin.feature_requirements(out),
+            AliasedInner::Inner(inner) => match inner {
+                TypeInner::Boolean | TypeInner::UInt(_) => {}
+                TypeInner::Either(left, right) => {
+                    left.feature_requirements(out);
+                    right.feature_requirements(out);
+                }
+                TypeInner::Option(element)
+                | TypeInner::Array(element, _)
+                | TypeInner::List(element, _) => element.feature_requirements(out),
+                TypeInner::Tuple(elements) => elements.feature_requirements(out),
+            },
+        }
     }
 }
 
