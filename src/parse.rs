@@ -30,6 +30,9 @@ use crate::str::{
     SymbolName, WitnessName,
 };
 use crate::types::{AliasedType, BuiltinAlias, TypeConstructible, UIntType};
+use crate::unstable::{
+    impl_require_feature, FeatureRequirement, RequireFeature, UnstableFeature, UnstableFeatures,
+};
 
 /// A program is a sequence of items.
 #[derive(Clone, Debug)]
@@ -55,6 +58,8 @@ impl Program {
 
 impl_eq_hash!(Program; items);
 
+impl_require_feature!(Program; items; skip: span);
+
 /// An item is a component of a program.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Item {
@@ -72,6 +77,18 @@ pub enum Item {
     /// When the parser encounters a syntax error, it skips the malformed tokens
     /// until it reaches a valid top-level keyword and inserts `Ignored` into the AST.
     Ignored,
+}
+
+impl RequireFeature for Item {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            Item::Use(use_decl) => use_decl.feature_requirements(out),
+            Item::Module(module) => module.feature_requirements(out),
+            Item::TypeAlias(alias) => alias.feature_requirements(out),
+            Item::Function(function) => function.feature_requirements(out),
+            Item::Ignored => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
@@ -108,6 +125,33 @@ pub struct UseDecl {
     /// The specific item or list of items being imported from the resolved path.
     items: UseItems,
     span: Span,
+}
+
+impl RequireFeature for UseDecl {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        let UseDecl {
+            file_id: _,
+            visibility: _,
+            path: _,
+            items,
+            span,
+        } = self;
+        out.push(FeatureRequirement::new(UnstableFeature::Imports, *span));
+        items.feature_requirements(out);
+    }
+}
+
+impl RequireFeature for UseItems {
+    fn feature_requirements(&self, _out: &mut Vec<FeatureRequirement>) {
+        // No requirement of its own: the enclosing `UseDecl` already gates the
+        // whole import (including the `as` aliases nested here) behind `Imports`,
+        // so pushing one here would just duplicate the error. The exhaustive
+        // match still forces a decision if a variant is added.
+        match self {
+            UseItems::Single(_) => {}
+            UseItems::List(_) => {}
+        }
+    }
 }
 
 impl UseDecl {
@@ -269,6 +313,8 @@ impl Function {
 
 impl_eq_hash!(Function; visibility, name, params, ret, body);
 
+impl_require_feature!(Function; params, ret, body; skip: file_id, visibility, name, span);
+
 /// Parameter of a function.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -289,6 +335,8 @@ impl FunctionParam {
     }
 }
 
+impl_require_feature!(FunctionParam; ty; skip: identifier);
+
 /// A statement is a component of a block expression.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Statement {
@@ -296,6 +344,15 @@ pub enum Statement {
     Assignment(Assignment),
     /// An expression that returns nothing (the unit value).
     Expression(Expression),
+}
+
+impl RequireFeature for Statement {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            Statement::Assignment(assignment) => assignment.feature_requirements(out),
+            Statement::Expression(expr) => expr.feature_requirements(out),
+        }
+    }
 }
 
 /// The output of an expression is assigned to a pattern.
@@ -331,6 +388,8 @@ impl Assignment {
 
 impl_eq_hash!(Assignment; pattern, ty, expression);
 
+impl_require_feature!(Assignment; pattern, ty, expression; skip: span);
+
 /// Call expression.
 #[derive(Clone, Debug)]
 pub struct Call {
@@ -357,6 +416,8 @@ impl Call {
 }
 
 impl_eq_hash!(Call; name, args);
+
+impl_require_feature!(Call; name, args; skip: span);
 
 /// Name of a call.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -388,6 +449,26 @@ pub enum CallName {
     ArrayFold(FunctionName, NonZeroUsize),
     /// Loop over the given function a bounded number of times until it returns success.
     ForWhile(FunctionName),
+}
+
+impl RequireFeature for CallName {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            CallName::UnwrapLeft(ty)
+            | CallName::UnwrapRight(ty)
+            | CallName::IsNone(ty)
+            | CallName::TypeCast(ty) => ty.feature_requirements(out),
+            CallName::Jet(_)
+            | CallName::Unwrap
+            | CallName::Assert
+            | CallName::Panic
+            | CallName::Debug
+            | CallName::Custom(_)
+            | CallName::Fold(_, _)
+            | CallName::ArrayFold(_, _)
+            | CallName::ForWhile(_) => {}
+        }
+    }
 }
 
 /// A type alias.
@@ -435,6 +516,8 @@ impl TypeAlias {
 
 impl_eq_hash!(TypeAlias; name, ty);
 
+impl_require_feature!(TypeAlias; ty; skip: file_id, visibility, name, span);
+
 /// An expression is something that returns a value.
 #[derive(Clone, Debug)]
 pub struct Expression {
@@ -478,6 +561,8 @@ impl Expression {
 
 impl_eq_hash!(Expression; inner);
 
+impl_require_feature!(Expression; inner; skip: span);
+
 /// The kind of expression.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ExpressionInner {
@@ -487,6 +572,18 @@ pub enum ExpressionInner {
     /// Then, the block returns the value of its final expression.
     /// The block returns nothing (unit) if there is no final expression.
     Block(Arc<[Statement]>, Option<Arc<Expression>>),
+}
+
+impl RequireFeature for ExpressionInner {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            ExpressionInner::Single(single) => single.feature_requirements(out),
+            ExpressionInner::Block(statements, maybe_expr) => {
+                statements.feature_requirements(out);
+                maybe_expr.feature_requirements(out);
+            }
+        }
+    }
 }
 
 /// A single expression directly returns a value.
@@ -509,6 +606,8 @@ impl SingleExpression {
 }
 
 impl_eq_hash!(SingleExpression; inner);
+
+impl_require_feature!(SingleExpression; inner; skip: span);
 
 /// The kind of single expression.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -545,6 +644,28 @@ pub enum SingleExpressionInner {
     ///
     /// The exclusive upper bound on the list size is not known at this point
     List(Arc<[Expression]>),
+}
+
+impl RequireFeature for SingleExpressionInner {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            SingleExpressionInner::Either(either) => either.feature_requirements(out),
+            SingleExpressionInner::Option(maybe_expr) => maybe_expr.feature_requirements(out),
+            SingleExpressionInner::Boolean(_)
+            | SingleExpressionInner::Decimal(_)
+            | SingleExpressionInner::Binary(_)
+            | SingleExpressionInner::Hexadecimal(_)
+            | SingleExpressionInner::Witness(_)
+            | SingleExpressionInner::Parameter(_)
+            | SingleExpressionInner::Variable(_) => {}
+            SingleExpressionInner::Expression(expr) => expr.feature_requirements(out),
+            SingleExpressionInner::Call(call) => call.feature_requirements(out),
+            SingleExpressionInner::Match(match_) => match_.feature_requirements(out),
+            SingleExpressionInner::Tuple(exprs)
+            | SingleExpressionInner::Array(exprs)
+            | SingleExpressionInner::List(exprs) => exprs.feature_requirements(out),
+        }
+    }
 }
 
 /// Match expression.
@@ -592,6 +713,8 @@ impl Match {
 
 impl_eq_hash!(Match; scrutinee, left, right);
 
+impl_require_feature!(Match; scrutinee, left, right; skip: span);
+
 /// Arm of a match expression.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct MatchArm {
@@ -611,6 +734,8 @@ impl MatchArm {
     }
 }
 
+impl_require_feature!(MatchArm; pattern, expression);
+
 /// Pattern of a match arm.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -627,6 +752,20 @@ pub enum MatchPattern {
     False,
     /// Match true value (no binding).
     True,
+}
+
+impl RequireFeature for MatchPattern {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            MatchPattern::Left(pattern, ty)
+            | MatchPattern::Right(pattern, ty)
+            | MatchPattern::Some(pattern, ty) => {
+                pattern.feature_requirements(out);
+                ty.feature_requirements(out);
+            }
+            MatchPattern::None | MatchPattern::False | MatchPattern::True => {}
+        }
+    }
 }
 
 impl MatchPattern {
@@ -658,6 +797,20 @@ pub struct Module {
     name: ModuleName,
     items: Arc<[Item]>,
     span: Span,
+}
+
+impl RequireFeature for Module {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        let Module {
+            file_id: _,
+            visibility: _,
+            name: _,
+            items,
+            span,
+        } = self;
+        out.push(FeatureRequirement::new(UnstableFeature::Imports, *span));
+        items.feature_requirements(out);
+    }
 }
 
 impl Module {
@@ -1111,8 +1264,12 @@ pub trait ParseFromStr: Sized {
 /// Trait for parsing with collection of errors.
 pub trait ParseFromStrWithErrors: Sized {
     /// Parse a value from the string `s` with Errors.
+    ///
+    /// Feature-gated syntax in the parsed AST is checked against
+    /// `unstable_features`; uses of disabled features are pushed to `handler`.
     fn parse_from_str_with_errors(
         source: impl Into<SourceFile>,
+        unstable_features: &UnstableFeatures,
         handler: &mut ErrorCollector,
     ) -> Option<Self>;
 }
@@ -1157,9 +1314,10 @@ impl<A: ChumskyParse + std::fmt::Debug> ParseFromStr for A {
     }
 }
 
-impl<A: ChumskyParse + std::fmt::Debug> ParseFromStrWithErrors for A {
+impl<A: ChumskyParse + RequireFeature + std::fmt::Debug> ParseFromStrWithErrors for A {
     fn parse_from_str_with_errors(
         source: impl Into<SourceFile>,
+        unstable_features: &UnstableFeatures,
         handler: &mut ErrorCollector,
     ) -> Option<Self> {
         let source: SourceFile = source.into();
@@ -1178,7 +1336,14 @@ impl<A: ChumskyParse + std::fmt::Debug> ParseFromStrWithErrors for A {
             )
             .into_output_errors();
 
+        let no_parse_errors = parse_errs.is_empty();
         handler.extend(source.clone(), parse_errs);
+
+        if let Some(ast) = &ast {
+            if no_parse_errors {
+                unstable_features.check_program(ast, &source, handler);
+            }
+        }
 
         // TODO: We should return parsed result if we found errors, but because analyzing in `ast` module
         // is not handling poisoned tree right now, we don't return parsed result
@@ -2588,7 +2753,11 @@ mod test {
         let input = "fn main() { let ab: u8 = <(u4, u4)> : :into((0b1011, 0b1101)); }";
         let source = SourceFile::anonymous(Arc::from(input));
         let mut error_handler = ErrorCollector::new();
-        let parse_program = Program::parse_from_str_with_errors(source, &mut error_handler);
+        let parse_program = Program::parse_from_str_with_errors(
+            source,
+            &UnstableFeatures::all(),
+            &mut error_handler,
+        );
 
         assert!(parse_program.is_none());
         assert!(ErrorCollector::to_string(&error_handler).contains("Expected '::', found ':'"));
@@ -2599,10 +2768,90 @@ mod test {
         let input = "fn main() { let pk: Pubkey = witnes::::PK; }";
         let source = SourceFile::anonymous(Arc::from(input));
         let mut error_handler = ErrorCollector::new();
-        let parse_program = Program::parse_from_str_with_errors(source, &mut error_handler);
+        let parse_program = Program::parse_from_str_with_errors(
+            source,
+            &UnstableFeatures::all(),
+            &mut error_handler,
+        );
 
         assert!(parse_program.is_none());
         assert!(ErrorCollector::to_string(&error_handler).contains("Expected ';', found '::'"));
+    }
+
+    /// Parse `input` and return whether it was rejected and the collected error text.
+    fn parse_with(input: &str, features: &UnstableFeatures) -> (bool, String) {
+        let source = SourceFile::anonymous(Arc::from(input));
+        let mut handler = ErrorCollector::new();
+        let program = Program::parse_from_str_with_errors(source, features, &mut handler);
+        (program.is_none(), ErrorCollector::to_string(&handler))
+    }
+
+    #[test]
+    fn test_gated_syntax_is_rejected_without_features() {
+        // Real `use`/`mod` syntax is rejected under none()
+        // (naming the feature + a -Z hint) and accepted under all(). Tied to concrete
+        // syntax so it flips — and signals removal — when the feature stabilizes.
+        for input in [
+            "use crate::foo::bar;\nfn main() { }",
+            "mod inner { }\nfn main() { }",
+        ] {
+            let (rejected, error) = parse_with(input, &UnstableFeatures::none());
+            assert!(
+                rejected,
+                "gated syntax must be rejected without features (if this feature was \
+                 just stabilized, delete this test):\n{input}"
+            );
+            assert!(
+                error.contains("imports") && error.contains("-Z"),
+                "rejection should name the feature and suggest -Z, got:\n{error}"
+            );
+
+            let (rejected, error) = parse_with(input, &UnstableFeatures::all());
+            assert!(
+                !rejected,
+                "the same syntax must parse with all features enabled:\n{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_type_heavy_program_needs_no_features() {
+        // Type positions are traversed by `RequireFeature` but not gated, so a
+        // type-heavy, import-free program must parse with no features — guards
+        // against the type recursion emitting false-positive gate errors.
+        let input = r#"type Alias = u32;
+fn pick(e: Either<u32, u32>) -> u32 {
+    match e {
+        Left(a: u32) => a,
+        Right(b: u32) => b,
+    }
+}
+fn main() {
+    let casted: u32 = <(u16, u16)>::into((0xbeef, 0xbabe));
+    let chosen: Alias = pick(Left(casted));
+    assert!(jet::eq_32(chosen, chosen));
+}
+"#;
+        // `parse_from_str_with_errors` returns `Some` only when no errors were
+        // collected, so a non-rejection already proves there were no gate errors.
+        let (rejected, error) = parse_with(input, &UnstableFeatures::none());
+        assert!(
+            !rejected,
+            "type-heavy but import-free program should parse with no features:\n{error}"
+        );
+    }
+
+    #[test]
+    fn test_syntax_error_does_not_produce_spurious_feature_gate_error() {
+        // The gate check skips error-recovered ASTs, so a program with
+        // both a syntax error and gated syntax reports only the syntax error.
+        let input = "use crate::foo;\nfn main( {";
+        let (rejected, error) = parse_with(input, &UnstableFeatures::none());
+        assert!(rejected, "broken program must be rejected");
+        assert!(
+            !error.contains("-Z"),
+            "syntax error should not produce a spurious feature-gate hint, got:\n{error}"
+        );
     }
 
     #[test]

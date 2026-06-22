@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::named::{CoreExt, PairBuilder, SelectorBuilder};
 use crate::str::Identifier;
 use crate::types::{ResolvedType, TypeInner};
+use crate::unstable::{FeatureRequirement, RequireFeature};
 
 /// Pattern for binding values to variables.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -72,6 +73,17 @@ impl Pattern {
             }
         }
         Ok(output)
+    }
+}
+
+impl RequireFeature for Pattern {
+    fn feature_requirements(&self, out: &mut Vec<FeatureRequirement>) {
+        match self {
+            Pattern::Identifier(_) | Pattern::Ignore => {}
+            Pattern::Tuple(elements) | Pattern::Array(elements) => {
+                elements.feature_requirements(out)
+            }
+        }
     }
 }
 
