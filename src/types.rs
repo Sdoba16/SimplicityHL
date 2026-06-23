@@ -633,6 +633,27 @@ impl AliasedType {
     }
 }
 
+impl crate::unstable::RequireFeature for AliasedType {
+    // Exhaustive match forces a compile error when a new variant is added,
+    // ensuring that feature-gated syntax cannot silently bypass the check.
+    fn feature_requirements(&self, out: &mut Vec<crate::unstable::FeatureRequirement>) {
+        match &self.0 {
+            AliasedInner::Alias(_) | AliasedInner::Builtin(_) => {}
+            AliasedInner::Inner(inner) => match inner {
+                TypeInner::Boolean | TypeInner::UInt(_) => {}
+                TypeInner::Either(left, right) => {
+                    left.feature_requirements(out);
+                    right.feature_requirements(out);
+                }
+                TypeInner::Option(element)
+                | TypeInner::Array(element, _)
+                | TypeInner::List(element, _) => element.feature_requirements(out),
+                TypeInner::Tuple(elements) => elements.feature_requirements(out),
+            },
+        }
+    }
+}
+
 impl TypeConstructible for AliasedType {
     fn either(left: Self, right: Self) -> Self {
         Self(AliasedInner::Inner(TypeInner::Either(
