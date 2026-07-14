@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "simplicityhl"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "arbitrary",
  "base64 0.21.3",
